@@ -41,5 +41,108 @@ Once you have the domain, run the below command. Makes ure to put your domain in
 4. Come out of `certs` directory
 
    `cd ..`
+## Creating necessary directories
+From your current working directory, make a folder named `logstash/config`
 
-### To be continued when am not sleepy
+`mkdir -p logstash/config`
+
+`cd` to `logstash/config`
+
+Now create a file named `logstash.yml` inside of it.
+
+Add these two lines to it:
+
+```
+http.host: "0.0.0.0"
+xpack.monitoring.elasticsearch.hosts: [ "http://elasticsearch:9200" ]
+```
+Now `cd ..` to `logstash` folder and create another directory called `pipeline`.
+
+Inside `pipeline` directory, create a file named `logstash.conf`. Make sure to add `user` and `password` appropriately.
+
+```
+input {
+  file {
+    path => "/home/ubuntu/workspace/logstash/access.log"
+    start_position => "beginning"
+  }
+}
+
+filter {
+  grok {
+    match => { "message" => "%{COMBINEDAPACHELOG}" }
+  }
+}
+
+output {
+  elasticsearch {
+    hosts => ["http://elasticsearch:9200"]
+    index => "logstash-logs-%{+YYYY.MM.dd}"
+    user => "admin"
+    password => "password"
+  }
+}
+```
+
+## Adding necessary file permissions
+From the current working directory, add these permissions now:
+
+`chmod 644 ./certs/*`
+
+`chmod 644 ./logstash/config/logstash.yml`
+
+`chmod 644 ./logstash/pipeline/logstash.conf`
+
+## Create the docker file
+```
+version: '3.8'
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.10.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+    volumes:
+      - esdata1:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+    networks:
+      - elasticnet
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.10.0
+    container_name: logstash
+    volumes:
+      - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml
+      - ./logstash/pipeline:/usr/share/logstash/pipeline
+    ports:
+      - 5000:5000
+    networks:
+      - elasticnet
+    depends_on:
+      - elasticsearch
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.10.0
+    container_name: kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=<32_character_long>
+    ports:
+      - "5601:5601"
+    networks:
+      - elasticnet
+    depends_on:
+      - elasticsearch
+
+volumes:
+  esdata1:
+    driver: local
+
+networks:
+  elasticnet:
+    driver: bridge
+```
+
+## Deploy ELK
+`docker compose up -d`
